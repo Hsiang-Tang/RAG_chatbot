@@ -1,39 +1,171 @@
-# Chatbot with PDF Processing
+# NVIDIA 財報查詢 Chatbot
 
-This project is a chatbot that reads and analyzes a given PDF file using OpenAI's GPT-4o model. It supports both **CLI mode** and **API mode**.
+本專案是一個基於 **RAG (檢索增強生成)** 技術的財報查詢 Chatbot，使用 **OpenAI GPT-4o** 和 **FAISS 向量資料庫** 來檢索 PDF 財報內容，並提供準確的回答。當 PDF 內部無法找到答案時，系統會自動使用 **SerpAPI** 進行網路搜尋。
+
+## 主要功能
+✅ **載入 PDF 財報並建立向量資料庫（FAISS）**  
+✅ **使用 OpenAI `text-embedding-3-small` 產生詞嵌入**  
+✅ **透過 FAISS 檢索最相關的財報內容**  
+✅ **使用 GPT-4o 根據檢索結果生成回答**  
+✅ **當財報內找不到資料時，自動使用 Google 搜尋 (SerpAPI)**  
 
 ---
 
-## **📌 Prerequisites**
-Before you begin, ensure you have the following installed:
-- **Docker** (https://docs.docker.com/get-docker/)
-- **Git** (https://git-scm.com/downloads)
-- An **OpenAI API key** (https://platform.openai.com/)
+## 1️⃣ 環境需求
+
+### **Linux (WSL) / MacOS / Docker**
+
+⚠ **注意：若在 MacOS 上運行，請確保沒有安裝 NVIDIA GPU 相關套件，避免與 CUDA 衝突！**
+
+| 需求 | 版本 |
+|------|------|
+| **Python** | `>=3.8` |
+| **FAISS** | `faiss-cpu` (MacOS 適用) |
+| **FAISS (GPU 版)** | `faiss-gpu` (僅適用於 Linux，MacOS 請勿安裝) |
+| **OpenAI API Key** | 需要 GPT-4o API 權限 |
+| **SerpAPI Key** | (可選) 用於網路搜尋 |
+| **Docker (可選)** | `>=20.10` |
 
 ---
 
-## **🚀 Quick Start**
-Follow these steps to set up and run the chatbot:
+## 2️⃣ 安裝步驟
 
-```bash
-# 1️⃣ Clone the repository
-git clone https://github.com/YOUR_GITHUB_USERNAME/YOUR_REPOSITORY.git
-cd YOUR_REPOSITORY
+### **📌 Linux (WSL) 安裝**
+**1️⃣ 建立 Python 環境**
+```sh
+sudo apt update && sudo apt install python3 python3-pip -y
+python3 -m venv env
+source env/bin/activate
+```
 
-# 2️⃣ Create and configure the .env file (Replace 'your-api-key-here' with your actual OpenAI API key)
-echo "OPENAI_API_KEY=your-api-key-here" > .env
+**2️⃣ 安裝依賴**
+```sh
+pip install -r requirements-linux.txt
+```
 
-# 3️⃣ Build the Docker image
-docker build -t chatbot-app .
+**3️⃣ 設定 `.env` 環境變數**
+```sh
+echo "OPENAI_API_KEY=你的OpenAI API Key" >> .env
+echo "SERP_API_KEY=你的SerpAPI Key（可選）" >> .env
+```
 
-# 4️⃣ Run the chatbot in CLI mode
-docker run --rm -it --env-file .env chatbot-app
+**4️⃣ 啟動 Chatbot**
+```sh
+python chatbot.py
+```
 
-# 5️⃣ (Optional) Run the chatbot as an API service
-docker run --rm -it -p 5000:5000 --env-file .env chatbot-app
+---
 
-# 6️⃣ (Optional) Test the API server using curl
-curl -X POST "http://127.0.0.1:5000/chat" -H "Content-Type: application/json" -d '{"query": "Give me a summary of the NVIDIA 2024 Q3 financial report"}'
+### **📌 MacOS 安裝**
+**1️⃣ 安裝 Python**
+```sh
+brew install python
+python3 -m venv env
+source env/bin/activate
+```
 
-# 7️⃣ Stop the container (if running interactively)
-CTRL + C
+**2️⃣ 安裝依賴（MacOS 需使用 CPU 版 FAISS）**
+```sh
+pip install -r requirements-macos.txt
+```
+
+⚠ **請勿在 MacOS 安裝 `faiss-gpu`，僅需 `faiss-cpu`**
+
+**3️⃣ 設定 `.env` 環境變數**
+```sh
+echo "OPENAI_API_KEY=你的OpenAI API Key" >> .env
+echo "SERP_API_KEY=你的SerpAPI Key（可選）" >> .env
+```
+
+**4️⃣ 啟動 Chatbot**
+```sh
+python chatbot.py
+```
+
+---
+
+### **📌 Docker 安裝**
+**1️⃣ 檢查 Docker 是否安裝**
+```sh
+docker --version
+```
+如果未安裝，請參考 [官方安裝指南](https://docs.docker.com/get-docker/)。
+
+**2️⃣ 構建 Docker Image**
+```sh
+docker build -t nvidia-chatbot .
+```
+
+**3️⃣ 運行容器**
+```sh
+docker run --rm -it --env OPENAI_API_KEY=你的OpenAI_API_Key --env SERP_API_KEY=你的SerpAPI_Key nvidia-chatbot
+```
+
+---
+
+## 3️⃣ 依賴安裝 (`requirements`)
+
+**🔹 Linux (WSL) 專用 (`requirements-linux.txt`)**
+```
+openai
+pypdf2
+faiss-gpu
+langdetect
+flask
+python-dotenv
+numpy
+```
+
+**🔹 MacOS 專用 (`requirements-macos.txt`)**
+```
+openai
+pypdf2
+faiss-cpu
+langdetect
+flask
+python-dotenv
+numpy
+```
+
+---
+
+## 4️⃣ Dockerfile
+
+```dockerfile
+# 使用 Python 3.10 作為基礎
+FROM python:3.10-slim
+
+# 設定工作目錄
+WORKDIR /app
+
+# 複製專案文件
+COPY . /app
+
+# 安裝必要的套件
+RUN pip install --no-cache-dir -r requirements-linux.txt
+
+# 設定環境變數
+ENV OPENAI_API_KEY=""
+ENV SERP_API_KEY=""
+
+# 指定啟動指令
+CMD ["python", "chatbot.py"]
+```
+
+---
+
+## 5️⃣ 使用方式
+
+### **📌 CLI 模式**
+啟動後，直接輸入財報相關問題：
+```sh
+python chatbot.py
+```
+示例：
+```
+請輸入你的問題: NVIDIA 在 2024 Q4 的營收是多少？
+回答: 總營收為 $35,082 百萬美元 (約 350.82 億美元)
+```
+
+---
+
